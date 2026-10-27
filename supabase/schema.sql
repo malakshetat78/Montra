@@ -1,0 +1,24 @@
+-- Schema for a NEW, EMPTY Supabase project. Existing deployments already have these tables.
+create table public.montra_expenses (id uuid primary key default gen_random_uuid(), user_id uuid not null default auth.uid() references auth.users(id) on delete cascade, merchant text not null check(length(trim(merchant)) between 1 and 80), amount numeric(14,2) not null check(amount > 0), expense_date date not null, method text not null check(method in ('Cash','PayPal')), category text not null check(length(trim(category)) between 1 and 40), note text not null default '' check(length(note)<=100), created_at timestamptz not null default now());
+create table public.montra_goals (id uuid primary key default gen_random_uuid(), user_id uuid not null default auth.uid() references auth.users(id) on delete cascade, name text not null check(length(trim(name)) between 1 and 80), target numeric(14,2) not null check(target>0), saved numeric(14,2) not null default 0 check(saved>=0), monthly numeric(14,2) not null default 0 check(monthly>=0), target_date date, created_at timestamptz not null default now());
+create table public.montra_budgets (id uuid primary key default gen_random_uuid(), user_id uuid not null default auth.uid() references auth.users(id) on delete cascade, category text not null check(length(trim(category)) between 1 and 40), budget_limit numeric(14,2) not null check(budget_limit>0), created_at timestamptz not null default now(), unique(user_id,category));
+create table public.montra_profiles (user_id uuid primary key default auth.uid() references auth.users(id) on delete cascade, income numeric(14,2) not null default 0 check(income>=0));
+create table public.montra_income_sources (id uuid primary key default gen_random_uuid(), user_id uuid not null default auth.uid() references auth.users(id) on delete cascade, name text not null check(length(trim(name)) between 1 and 80), amount numeric(14,2) not null check(amount>0), created_at timestamptz not null default now());
+create table public.montra_commitments (id uuid primary key default gen_random_uuid(), user_id uuid not null default auth.uid() references auth.users(id) on delete cascade, name text not null check(length(trim(name)) between 1 and 80), amount numeric(14,2) not null check(amount>0), due_day smallint not null check(due_day between 1 and 31), created_at timestamptz not null default now());
+create index montra_expenses_user_date_idx on public.montra_expenses(user_id, expense_date desc);
+create index montra_goals_user_idx on public.montra_goals(user_id);
+create index montra_income_sources_user_idx on public.montra_income_sources(user_id);
+create index montra_commitments_user_idx on public.montra_commitments(user_id);
+alter table public.montra_expenses enable row level security;
+alter table public.montra_goals enable row level security;
+alter table public.montra_budgets enable row level security;
+alter table public.montra_profiles enable row level security;
+alter table public.montra_income_sources enable row level security;
+alter table public.montra_commitments enable row level security;
+create policy montra_expenses_own on public.montra_expenses for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy montra_goals_own on public.montra_goals for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy montra_budgets_own on public.montra_budgets for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy montra_profiles_own on public.montra_profiles for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy montra_income_sources_own on public.montra_income_sources for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+create policy montra_commitments_own on public.montra_commitments for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+grant select, insert, update, delete on public.montra_expenses, public.montra_goals, public.montra_budgets, public.montra_profiles, public.montra_income_sources, public.montra_commitments to authenticated;
