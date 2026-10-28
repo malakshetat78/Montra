@@ -1,4 +1,5 @@
 import {createClient} from 'npm:@supabase/supabase-js@2.49.8';
+import {analyzeResearch} from './analysis.js';
 import {usdAmount,approvalURL,verifiedCapture} from './validation.js';
 const admin=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false}});
 const SITE='https://montra-finance.khaledshetat4.chatgpt.site',BASE='https://api-m.sandbox.paypal.com';
@@ -6,6 +7,13 @@ async function json(url:string,init:RequestInit={}){const r=await fetch(url,{...
 Deno.serve(async req=>{const origin=req.headers.get('origin')||'',allowed=[SITE,'http://terminal.local:4173'];const headers={'Content-Type':'application/json','Access-Control-Allow-Origin':allowed.includes(origin)?origin:SITE,'Access-Control-Allow-Headers':'authorization, apikey, content-type, x-client-info','Access-Control-Allow-Methods':'POST, OPTIONS','Vary':'Origin'};const reply=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers});if(req.method==='OPTIONS')return new Response(null,{headers});if(req.method!=='POST'||(origin&&!allowed.includes(origin)))return reply({error:'Not allowed'},403);
 try{const token=req.headers.get('authorization')?.replace(/^Bearer /,'');if(!token)return reply({error:'Sign in required'},401);const {data:auth,error:authError}=await admin.auth.getUser(token);if(authError||!auth.user)return reply({error:'Sign in required'},401);const uid=auth.user.id;const body=await req.json();const {data:secrets,error:secretError}=await admin.rpc('montra_paypal_sandbox_secrets');if(secretError)throw new Error('Sandbox configuration unavailable');const ready=Boolean(secrets.montra_paypal_sandbox_client_id&&secrets.montra_paypal_sandbox_client_secret);
 if(body.action==='status')return reply({ready,environment:'sandbox',quoteReady:Boolean(secrets.montra_twelvedata_key)});
+if(body.action==='research'){
+ const symbol=String(body.symbol||'').toUpperCase();if(!['AAPL','MSFT','VTI'].includes(symbol))throw new Error('Research is currently available for AAPL, MSFT and VTI only');if(!secrets.montra_twelvedata_key)throw new Error('Stock price service is not configured');const etf=symbol==='VTI';
+ async function dataset(endpoint:string,params:string){const key='research-v1:'+endpoint+':'+symbol;const {data:cached}=await admin.from('montra_market_cache').select('payload,fetched_at').eq('key',key).maybeSingle();if(cached&&Date.now()-Date.parse(cached.fetched_at)<(cached.payload?.failed?600000:86400000))return cached.payload?.failed?null:cached.payload;let payload:any;try{payload=await json('https://api.twelvedata.com/'+endpoint+'?symbol='+symbol+'&country=US'+params,{headers:{Authorization:'apikey '+secrets.montra_twelvedata_key}});if(payload.status==='error')throw new Error('Unavailable');}catch{payload={failed:true};}await admin.from('montra_market_cache').upsert({key,payload,fetched_at:new Date().toISOString()});return payload.failed?null:payload;}
+ const history=await dataset('time_series','&interval=1day&outputsize=100&adjust=splits');const statistics=etf?null:await dataset('statistics','');const statements=etf?null:await dataset('income_statement','&period=annual&outputsize=6');
+ return reply({analysis:analyzeResearch(history,statistics,statements,{symbol,etf}),source:'Twelve Data'});
+}
+
 if(body.action==='explore'){
  if(!secrets.montra_twelvedata_key)throw new Error('Stock price service is not configured');
  const choices=[{symbol:'VTI',type:'Broad-market ETF',reason:'A fund example to compare with owning a single company. Review its holdings, concentration and fees.'},{symbol:'AAPL',type:'Single-company stock',reason:'A single-company example. Its outcome depends on one business; compare it with diversified alternatives.'},{symbol:'MSFT',type:'Single-company stock',reason:'Another single-company example for comparison, not a prediction of future performance.'}];

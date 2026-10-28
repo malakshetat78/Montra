@@ -17,3 +17,10 @@ Not implemented: live trading, Egyptian stock purchases, broker settlement, refu
 
 ## Discovery before checkout
 The authenticated explore action returns fixed research examples (VTI, AAPL, MSFT), with real provider quotes cached 15 minutes. It is not a ranking, valuation model, suitability determination or forecast. Missing/old quotes are clearly unavailable and cannot be compared. The UI defaults to Egypt, explicitly awaiting a provider; US examples are available by selecting that market. Goal comparisons apply hypothetical -20/0/+20 percent gain or loss to the remaining savings gap, with stated assumptions and downside disclosure. They do not change real goal savings.
+
+## Evidence and risks research
+The authenticated research action accepts AAPL, MSFT and VTI only. It fetches split-adjusted daily history (100 sessions), statistics and annual income statements, caches successful datasets for 24 hours and failures for 10 minutes. VTI uses history only; company fundamental rules are not applied to ETFs. Missing provider entitlements/data produce explicit coverage gaps. Secrets stay server-side; no personal goal data is sent to the market-data provider.
+
+analysis.js computes sample log-return volatility annualized with sqrt(252), closing-price sample drawdown and 20-session price change, excluding today in New York. At least 60 completed observations are required. It uses actual fiscal dates rather than fiscal-year labels, validates symbol/currency, and suppresses positive fundamental observations for undated or >180-day quarter data. Annual reports older than 550 days are marked stale. These freshness thresholds are transparent engineering rules, not financial ratings. P/E has no buy/cheap threshold; peer valuation is unavailable. No ranking, probability, target price or forecast is produced. Stocks remain a fixed small research universe. The frontend relates research to the selected goal horizon and opens the existing hypothetical scenarios.
+
+Validation: node tests/research.test.mjs and node tests/opportunities.test.mjs. Calculations were independently checked against SQL using actual provider AAPL data.
