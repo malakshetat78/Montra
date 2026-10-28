@@ -7,7 +7,7 @@ Configure these Vault secret names through a secure admin interface (never in so
 - montra_paypal_sandbox_client_secret
 - montra_twelvedata_key (already used by the market-price worker)
 
-PayPal Sandbox app credentials are currently not configured. Payment buttons remain unavailable until they are supplied. Price review remains usable if Twelve Data and currency reference data are available. No fake PayPal success path exists.
+PayPal Sandbox app credentials are configured in the production Vault. Server-side OAuth authentication was verified successfully. Payment buttons remain unavailable on any deployment without those secrets. Price review remains usable if Twelve Data and currency reference data are available. No fake PayPal success path exists.
 
 Flow: authenticated price review -> immutable database draft -> server-created USD PayPal order -> user approval on www.sandbox.paypal.com -> explicit server capture verification -> simulated fill. Server checks order owner, order/custom IDs, completed capture, exact USD amount and single capture. Stable idempotency keys cover create/capture. A row-locking service-only RPC completes each draft once. Retry after a timeout recovers an already completed PayPal order. Cancellations are never treated as payment success. Uncompleted reviews do not create holdings. Drafts expire for new payment creation after 15 minutes. Reviews are rate-limited to 20/hour/user.
 
