@@ -1,0 +1,37 @@
+import {createClient} from 'npm:@supabase/supabase-js@2.49.8';
+import {positive,freshTime,goldPerGram,convertedPrice,stockExchange} from './pricing.js';
+const admin=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false}});
+async function json(url:string,headers:Record<string,string>={}){const r=await fetch(url,{headers,signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error('Price provider request failed');return r.json();}
+async function cached(key:string,ttl:number,fetcher:()=>Promise<unknown>){const {data}=await admin.from('montra_market_cache').select('*').eq('key',key).maybeSingle();if(data&&Date.now()-Date.parse(data.fetched_at)<ttl)return data.payload;const payload=await fetcher();const {error}=await admin.from('montra_market_cache').upsert({key,payload,fetched_at:new Date().toISOString()});if(error)throw new Error('Unable to cache market data');return payload;}
+Deno.serve(async req=>{const reply=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});try{
+ const {data:secrets,error}=await admin.rpc('montra_market_secrets');if(error)throw error;
+ if(req.method!=='POST'||!secrets.montra_job_token||req.headers.get('x-montra-job')!==secrets.montra_job_token)return reply({error:'Unauthorized'},401);
+ const body=await req.json().catch(()=>({}));let query=admin.from('montra_assets').select('*').neq('quote_source','manual');if(body.asset_id){if(!/^[0-9a-f-]{36}$/i.test(body.asset_id))return reply({error:'Invalid asset'},400);query=query.eq('id',body.asset_id);} const {data:assets,error:assetError}=await query.order('updated_at',{ascending:true}).limit(100);if(assetError)throw assetError;
+ let gold:any=null,fx:any=null;let goldReady=false;
+ try{gold=await cached('gold:USD',240000,async()=>{const data=await json('https://api.gold-api.com/price/XAU');if(data.symbol!=='XAU'||data.currency!=='USD')throw new Error('Unsupported quote');positive(data.price);freshTime(data.updatedAt,30*60000);return data;});freshTime(gold.updatedAt,30*60000);goldReady=true;}catch{}
+ try{fx=await cached('fx:USD',12*3600000,async()=>{let data:any; if(secrets.montra_exchangerate_key){try{data=await json('https://v6.exchangerate-api.com/v6/latest/USD',{Authorization:`Bearer ${secrets.montra_exchangerate_key}`});if(data.result!=='success')throw new Error('Currency provider unavailable');data.rates=data.conversion_rates;}catch{data=null;}} if(!data)data=await json('https://open.er-api.com/v6/latest/USD');if(data.result!=='success'||data.base_code!=='USD')throw new Error('Invalid FX response');freshTime(data.time_last_update_unix,3*86400000);return {rates:data.rates,updatedAt:new Date(data.time_last_update_unix*1000).toISOString()};});freshTime(fx.updatedAt,3*86400000);}catch{fx=null;}
+ await admin.from('montra_market_status').upsert({id:true,gold_spot_ready:goldReady&&Boolean(fx),gold_egypt_ready:Boolean(secrets.montra_gold_egypt_key),stocks_ready:Boolean(secrets.montra_twelvedata_key),checked_at:new Date().toISOString()});
+ let updated=0,failed=0;const distinct=new Set<string>();
+ for(const asset of assets||[]){try{
+   const key=[asset.quote_source,asset.market,asset.symbol,asset.gold_karat,asset.currency].join(':');distinct.add(key);if(distinct.size>8)continue;
+   let price:number,quoteTime:string,fxTime:string|null=null,closed=false,note='';
+   if(asset.quote_source==='gold_spot'){
+     if(asset.kind!=='Gold'||asset.unit!=='grams')throw new Error('Automatic gold valuation requires a quantity in grams');
+     if(!goldReady)throw new Error('Gold source is unavailable or stale');if(!fx)throw new Error('FX source is unavailable or stale');
+     price=goldPerGram(gold.price,fx.rates[asset.currency],asset.gold_karat);quoteTime=freshTime(gold.updatedAt,30*60000);fxTime=fx.updatedAt;
+     note='International spot reference converted using daily FX. Not an Egypt retail or buyback quote. Excludes workmanship and dealer premiums.';
+   }else if(asset.quote_source==='gold_egypt'){
+     if(!secrets.montra_gold_egypt_key)throw new Error('Egypt gold provider API key is not configured');if(asset.kind!=='Gold'||asset.unit!=='grams'||asset.market!=='EG')throw new Error('Egypt gold reference requires Gold, grams and Egypt market');
+     const data=await cached(`gold-eg:${asset.gold_karat}`,240000,async()=>{const payload=await json(`https://goldtimo.com/api/v1/price/XAU/EGP/${asset.gold_karat}`,{'x-api-key':secrets.montra_gold_egypt_key});if(payload.symbol!=='XAU'||payload.currency!=='EGP'||Number(payload.karat)!==Number(asset.gold_karat))throw new Error('Invalid Egypt gold response');positive(payload.gram);freshTime(payload.updatedAt,30*60000);return payload;});
+     quoteTime=freshTime(data.updatedAt,30*60000);if(asset.currency!=='EGP'&&!fx)throw new Error('FX source is unavailable');price=convertedPrice(data.gram,'EGP',asset.currency,fx?.rates||{});fxTime=asset.currency!=='EGP'?fx.updatedAt:null;
+     note='Gold Timo Egypt per-gram reference. Excludes individual shop workmanship and resale adjustments.';
+   }else if(asset.quote_source==='twelve_data'){
+     if(!secrets.montra_twelvedata_key)throw new Error('Stock price provider API key is not configured');if(asset.kind!=='Stock'||asset.unit!=='shares'||!/^[A-Za-z0-9.^_-]{1,30}$/.test(asset.symbol))throw new Error('Select a stock market and enter a valid symbol');const exchange=stockExchange(asset.market);
+     const data=await cached(`stock:${exchange}:${asset.symbol}`,15*60000,async()=>{const url=new URL('https://api.twelvedata.com/quote');url.searchParams.set('symbol',asset.symbol);if(exchange!=='US')url.searchParams.set('mic_code',exchange);const payload=await json(url.toString(),{Authorization:`apikey ${secrets.montra_twelvedata_key}`});if(payload.status==='error'||!payload.currency||!payload.timestamp)throw new Error('Symbol unavailable, or data plan does not cover this exchange');positive(payload.close);freshTime(Number(payload.timestamp),7*86400000);return payload;});
+     quoteTime=freshTime(Number(data.timestamp),data.is_market_open===false?7*86400000:60*60000);if(data.currency!==asset.currency&&!fx)throw new Error('FX source is unavailable');price=convertedPrice(data.close,data.currency,asset.currency,fx?.rates||{});fxTime=data.currency!==asset.currency?fx.updatedAt:null;closed=data.is_market_open===false;
+     note='Twelve Data last available stock quote. Exchange delays and market closures may apply; foreign-currency conversion uses daily FX.';
+   }else throw new Error('Unsupported pricing source');
+   const {data:applied,error:applyError}=await admin.rpc('montra_apply_quote',{aid:asset.id,source:asset.quote_source,karat:asset.gold_karat,ticker:asset.symbol,asset_market:asset.market,ledger_currency:asset.currency,price:Number(price.toFixed(6)),quote_time:quoteTime,fx_time:fxTime,market_closed:closed,note});if(applyError)throw new Error('Unable to save quote');if(applied)updated++;
+ }catch(e){failed++;let message=e instanceof Error?e.message:'Price source unavailable';const isConfig=message.includes('not configured');const status=isConfig?'unavailable':message.includes('stale')?'stale':'error';await admin.from('montra_assets').update({quote_status:status,quote_note:message.slice(0,200),updated_at:new Date().toISOString()}).eq('id',asset.id).eq('quote_source',asset.quote_source);}}
+ return reply({updated,failed,goldReady,fxReady:Boolean(fx)});
+ }catch{return reply({error:'Market sync temporarily unavailable'},500)}});

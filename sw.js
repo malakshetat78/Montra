@@ -1,0 +1,5 @@
+// Only handles notifications. It does not cache pages or financial data.
+self.addEventListener('install',()=>self.skipWaiting());
+self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
+self.addEventListener('push',event=>{let data={};try{data=event.data?.json()||{}}catch{}const view=['overview','budgets','goals','settings'].includes(data.view)?data.view:'overview';event.waitUntil(self.registration.showNotification('Montra',{body:'You have a new update. Open Montra to view it.',icon:'/logo.png',badge:'/logo.png',tag:data.id||'montra-update',data:{view}}));});
+self.addEventListener('notificationclick',event=>{event.notification.close();const target=new URL('/',self.location.origin);target.searchParams.set('view',event.notification.data?.view||'overview');event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(async clients=>{for(const client of clients){if(new URL(client.url).origin===target.origin){await client.navigate(target.href);return client.focus();}}return self.clients.openWindow(target.href)}));});

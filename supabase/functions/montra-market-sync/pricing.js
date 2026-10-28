@@ -1,0 +1,5 @@
+export function positive(value,label='price'){const n=Number(value);if(!Number.isFinite(n)||n<=0)throw new Error(`Invalid ${label}`);return n;}
+export function freshTime(value,maxAge,now=Date.now()){const ms=typeof value==='number'?value*1000:Date.parse(value);if(!Number.isFinite(ms)||ms>now+300000||now-ms>maxAge)throw new Error('Source timestamp is stale or invalid');return new Date(ms).toISOString();}
+export function goldPerGram(usdPerOunce,usdToCurrency,karat){if(![14,18,21,22,24].includes(Number(karat)))throw new Error('Unsupported gold purity');return positive(usdPerOunce)/31.1034768*Number(karat)/24*positive(usdToCurrency,'FX rate');}
+export function convertedPrice(price,quoteCurrency,baseCurrency,rates){if(quoteCurrency===baseCurrency)return positive(price);return positive(price)/positive(rates[quoteCurrency],'quote FX rate')*positive(rates[baseCurrency],'base FX rate');}
+export function stockExchange(market){const code={EG:'XCAI',US:'US',GB:'XLON',SA:'XSAU',AE:'XDFM'}[market];if(!code)throw new Error('Automatic stock prices are not configured for this market');return code;}

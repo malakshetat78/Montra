@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const code=fs.readFileSync(new URL('../supabase/functions/montra-market-sync/pricing.js',import.meta.url),'utf8');
+const {goldPerGram,convertedPrice,freshTime,positive,stockExchange}=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
+assert.equal(goldPerGram(3110.34768,50,24),5000);
+assert.equal(goldPerGram(3110.34768,50,21),4375);
+assert.equal(goldPerGram(3110.34768,50,18),3750);
+assert.equal(convertedPrice(100,'USD','EGP',{USD:1,EGP:50}),5000);
+assert.equal(convertedPrice(100,'EGP','EGP',{}),100);
+assert.throws(()=>convertedPrice(100,'USD','EGP',{}));
+assert.throws(()=>positive(NaN));assert.throws(()=>positive(-1));assert.throws(()=>goldPerGram(100,50,20));
+const now=Date.parse('2026-10-28T12:00:00Z');assert.equal(freshTime('2026-10-28T11:55:00Z',600000,now),'2026-10-28T11:55:00.000Z');
+assert.throws(()=>freshTime('2026-10-28T10:00:00Z',600000,now));assert.throws(()=>freshTime('2026-10-29T12:00:00Z',600000,now));
+assert.equal(stockExchange('EG'),'XCAI');assert.throws(()=>stockExchange('Other'));
+console.log('Gold purity, gram conversion, cross-currency valuation, invalid prices, stale quotes and exchange selection passed.');
