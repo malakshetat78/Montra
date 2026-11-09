@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - '.montra-transfer/part-*.txt'
+      - '.github/workflows/import-montra-final.yml'
 
 permissions:
   contents: write
