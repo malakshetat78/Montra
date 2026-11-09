@@ -1,0 +1,33 @@
+name: Montra checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare test fixtures
+        run: |
+          mkdir -p dist
+          cp investments.js opportunities.js dist/
+      - name: Run tests
+        run: node --test tests/*.test.*
+      - name: Verify static site files
+        run: |
+          test -s index.html
+          test -s locales.js
+          test -s logo.png
+          test -s sw.js
