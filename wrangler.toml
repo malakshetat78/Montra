@@ -1,0 +1,5 @@
+# Cloudflare Pages: deploy the repository root as a static website.
+# When importing from GitHub, choose Framework preset: None,
+# Build command: (leave blank), Build output directory: /
+name = "montra"
+pages_build_output_dir = "."
