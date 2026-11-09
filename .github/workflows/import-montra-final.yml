@@ -30,7 +30,7 @@ jobs:
         if: steps.parts.outputs.complete == 'true'
         shell: bash
         run: |
-          for n in $(seq -w 0 9); do cat ".montra-transfer/part-$n.txt"; done | base64 --decode > /tmp/montra-final.patch.xz
+          for i in $(seq 0 9); do n=$(printf "%02d" "$i"); cat ".montra-transfer/part-$n.txt"; done | base64 --decode > /tmp/montra-final.patch.xz
           echo "2112f6035ec7d5fd9add1f72604aef1e461985a6fb567b2eb25fd2e7149b0351  /tmp/montra-final.patch.xz" | sha256sum -c -
           xz -dc /tmp/montra-final.patch.xz > /tmp/montra-final.patch
           git apply --check /tmp/montra-final.patch
