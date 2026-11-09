@@ -1,0 +1,5 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const x=require('../finance-reports.js');
+test('monthly report groups and filters expenses',()=>{const r=x.report([{date:'2026-11-01',category:'Food',amount:30},{date:'2026-11-03',category:'Food',amount:20},{date:'2026-10-03',amount:200}], '2026-11');assert.equal(r.total,50);assert.equal(r.categories.Food,50);assert.equal(r.count,2)});
+test('CSV quotes potentially dangerous cell text and has BOM',()=>{const c=x.csv(x.report([{date:'2026-11-02',category:'Food, snacks',amount:5}],'2026-11'));assert.ok(c.startsWith('\uFEFF'));assert.match(c,/"Food, snacks"/)});
+test('forecast excludes recurring tagged expenses and does not double-count income sources',()=>{const f=x.forecast({expenses:[{date:'2026-10-03',amount:100},{date:'2026-10-04',amount:400,recurring_rule_id:'id'}],monthlyIncome:1000,incomes:[{amount:1000}],commitments:[{amount:200}],start:new Date(2026,10,9)});assert.equal(f.income,1000);assert.equal(f.avgVariable,100);assert.equal(f.netMonthly,700)});
+test('forecast validates inputs',()=>assert.throws(()=>x.forecast({days:500})));

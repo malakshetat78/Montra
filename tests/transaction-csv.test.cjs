@@ -1,0 +1,4 @@
+const test=require('node:test'),assert=require('node:assert/strict'),csv=require('../transaction-csv.js');
+test('roundtrip quoted commas, newlines, and quotes',()=>{const input=[{merchant:'Shop, "A"\nNorth',amount:12.5,date:'2026-11-09',method:'Cash',category:'Food & drinks',note:'hello'}];const result=csv.validate(csv.exportCSV(input));assert.deepEqual(result.errors,[]);assert.equal(result.accepted[0].merchant,input[0].merchant);});
+test('reject malformed, duplicates, invalid dates and negative values',()=>{const s='merchant,amount,expense_date,method,category,note\nA,10,2026-11-09,Cash,Food,\nA,10,2026-11-09,Cash,Food,\nB,-1,2026-11-09,Cash,Food,\nC,1,2026-02-30,Cash,Food,\n';const r=csv.validate(s);assert.equal(r.accepted.length,1);assert.equal(r.errors.length,3);});
+test('reject missing header and unterminated quote',()=>{assert.throws(()=>csv.validate('merchant,amount\nA,2'));assert.throws(()=>csv.parse('"bad'));});

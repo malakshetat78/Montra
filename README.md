@@ -39,3 +39,9 @@ node tests/market-pricing.test.mjs
 ```
 
 Tests cover purity, grams, cross-currency conversion, invalid/stale prices and market selection. Database integration checks were also performed with rolled-back test data. Device Web Push receipt was confirmed by the user.
+
+## CSV expense import/export (incremental update)
+
+Open **Transactions** after signing in and choose **Export CSV** to download the current currency ledger's expenses, or **Import CSV** to upload a CSV with columns `merchant,amount,expense_date,method,category,note`. Dates must be `YYYY-MM-DD`; methods must be `Cash` or `PayPal`; amounts must be positive. The import validates rows and shows counts/errors before writing to the existing `montra_expenses` table using the signed-in user's Supabase session and existing RLS. It skips invalid rows and duplicate rows **within the file**; it does **not** deduplicate against previously imported database records. Imports use batches of 100; if one batch fails, earlier batches may remain saved. Review the ledger before retrying. Only CSV is supported, not native XLSX. No database migration or new secrets are needed.
+
+Test the CSV logic: `node --test tests/transaction-csv.test.cjs`. The existing suite has two pre-existing failures and must be fixed separately. This update has not been verified against a live Supabase account.
