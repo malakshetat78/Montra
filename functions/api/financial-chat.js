@@ -27,8 +27,16 @@ export async function onRequestPost({request,env}){
     const byCategory={};for(const x of monthlyExpenses){byCategory[x.category]=(byCategory[x.category]||0)+Math.max(0,x.amount);}
     const currency=String(snapshot.currency||'EGP').slice(0,5);
     const facts={today_utc:currentDate,current_month:currentMonth,monthly_expense_total:currentTotal,monthly_expense_count:monthlyExpenses.length,monthly_category_totals:byCategory,recorded_monthly_income:Number(snapshot.income)||0,goals:safeGoals,currency};
+    const isArabic=/[\u0600-\u06FF]/.test(question);
     const isMonthlySpend=/(how much|total|كم|كام|قد ايه|قد إيه|اجمالي|إجمالي).*(spend|spent|expense|صرف|مصاريف|مصروف)/i.test(question)&&/(this month|current month|الشهر|month)/i.test(question);
-    if(isMonthlySpend){const answer=/[\\u0600-\\u06FF]/.test(question)?'إجمالي المصروفات المسجلة في '+currentMonth+' هو '+currentTotal.toLocaleString('en-US')+' '+currency+' من '+monthlyExpenses.length+' عملية. ده بناءً على البيانات المسجلة في Montra، مش رصيد البنك.':'Your recorded spending in '+currentMonth+' is '+currency+' '+currentTotal.toLocaleString('en-US')+' across '+monthlyExpenses.length+' transaction(s). This reflects Montra records, not your bank balance.';return respond({answer,provider:'Montra verified calculation'});}
+    const wantsCategory=/(categor|category|most on|اكتر|أكتر|تصنيف|فئة)/i.test(question);
+    if(isMonthlySpend){
+      const top=Object.entries(byCategory).sort((a,b)=>b[1]-a[1])[0];
+      let answer=isArabic?'إجمالي المصروفات المسجلة في '+currentMonth+' هو '+currentTotal.toLocaleString('en-US')+' '+currency+' من '+monthlyExpenses.length+' عملية.':'Your recorded spending in '+currentMonth+' is '+currency+' '+currentTotal.toLocaleString('en-US')+' across '+monthlyExpenses.length+' transaction(s).';
+      if(wantsCategory)answer+=top?(isArabic?' أعلى تصنيف: '+top[0]+' ('+currency+' '+top[1].toLocaleString('en-US')+').':' Your top spending category is '+top[0]+' ('+currency+' '+top[1].toLocaleString('en-US')+').'):(isArabic?' لا توجد مصروفات مسجلة لتحديد أعلى تصنيف.':' No expenses are recorded to identify a top category.');
+      answer+=isArabic?' الأرقام من سجلات Montra، مش رصيد البنك.':' These figures come from Montra records, not your bank balance.';
+      return respond({answer,provider:'Montra verified calculation'});
+    }
     const messages=[{role:'system',content:'You are Montra, a bilingual Arabic/English financial education assistant. Answer in the user language. Today (UTC) is '+currentDate+'. Never infer the current month from transaction dates. The following financial facts were computed deterministically by the app; use them exactly, never recalculate or invent numbers: '+JSON.stringify(facts)+'. Data is user-recorded, not bank-verified. If records are missing, say so. Do not provide definitive buy/sell instructions. Be concise.'},{role:'user',content:question}];
     const result=await env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8-fast',{messages,max_tokens:350});
     const answer=String(result?.response||'').trim();if(!answer)throw Error('Empty AI response');
