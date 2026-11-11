@@ -27,6 +27,23 @@ export async function onRequestPost({request,env}){
     const byCategory={};for(const x of monthlyExpenses){byCategory[x.category]=(byCategory[x.category]||0)+Math.max(0,x.amount);}
     const currency=String(snapshot.currency||'EGP').slice(0,5);
     const facts={today_utc:currentDate,current_month:currentMonth,monthly_expense_total:currentTotal,monthly_expense_count:monthlyExpenses.length,monthly_category_totals:byCategory,recorded_monthly_income:(Number(snapshot.income)>0?Number(snapshot.income):null),income_status:(Number(snapshot.income)>0?'recorded_positive':'not_recorded_or_zero'),expenses_completeness:'Only user-recorded expenses; may be incomplete',goals:safeGoals,currency};
+    const history=Array.isArray(body?.history)?body.history.slice(-8).filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.text==='string').map(m=>({role:m.role,text:m.text.slice(0,500)})):[];
+    const incomePattern=/(?:my\\s+(?:monthly\\s+)?income\\s+is|i\\s+earn|دخلي(?:\\s+الشهري)?|مرتبي)\\s*(?:is|=|هو|حوالي)?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)/i;
+    const incomeFrom=text=>{const m=String(text).match(incomePattern);if(!m)return null;const n=Number(m[1].replace(/,/g,''));return Number.isFinite(n)&&n>0&&n<1e9?n:null;};
+    const declaredIncome=incomeFrom(question)??history.filter(m=>m.role==='user').reverse().map(m=>incomeFrom(m.text)).find(n=>n!==null)??null;
+    facts.chat_declared_income=declaredIncome;
+    facts.chat_declared_income_is_saved=false;
+    const savingsQuestion=/(sav(?:e|ing|ings)|budget|plan|ادخار|تحويش|وفر|توفير|ميزاني|خطة)/i.test(question);
+    if(savingsQuestion&&declaredIncome!==null){
+      const available=Math.round((declaredIncome-currentTotal)*100)/100;
+      const proposed=Math.max(0,Math.min(500,Math.round(Math.max(0,available)*0.15*100)/100));
+      const remaining=Math.round((available-proposed)*100)/100;
+      const money=n=>currency+' '+n.toLocaleString('en-US',{maximumFractionDigits:2});
+      const goalsText=safeGoals.length?safeGoals.map(g=>g.name+' ('+money(Math.max(0,g.target-g.saved))+' remaining)').join('; '):'No goals saved';
+      const arabic=/[\\u0600-\\u06FF]/.test(question);
+      const answer=arabic?'خطة ادخار تجريبية بناءً على الدخل اللي قلته في الشات '+money(declaredIncome)+' (مش محفوظ في حسابك): المصروفات المسجلة للشهر '+money(currentTotal)+'، والفرق المبدئي '+money(available)+'، واقتراح ادخار محافظ '+money(proposed)+'، والمتبقي نظريًا '+money(remaining)+'. الأهداف: '+goalsText+'. مهم: مصروفاتك المسجلة ممكن تكون ناقصة؛ راجع الأساسيات والالتزامات قبل الالتزام بالمبلغ.':'Illustrative savings plan using the '+money(declaredIncome)+' monthly income you mentioned in chat (not saved to your account): recorded expenses this month '+money(currentTotal)+'; preliminary difference '+money(available)+'; cautious suggested savings '+money(proposed)+'; theoretical remainder '+money(remaining)+'. Goals: '+goalsText+'. Your expense records may be incomplete. Check essentials, bills and debts before committing to this amount.';
+      return respond({answer,provider:'Montra illustrative calculation'});
+    }
     const isArabic=/[\u0600-\u06FF]/.test(question);
     const isMonthlySpend=/(how much|total|كم|كام|قد ايه|قد إيه|اجمالي|إجمالي).*(spend|spent|expense|صرف|مصاريف|مصروف)/i.test(question)&&/(this month|current month|الشهر|month)/i.test(question);
     const wantsCategory=/(categor|category|most on|اكتر|أكتر|تصنيف|فئة)/i.test(question);
@@ -37,7 +54,7 @@ export async function onRequestPost({request,env}){
       answer+=isArabic?' الأرقام من سجلات Montra، مش رصيد البنك.':' These figures come from Montra records, not your bank balance.';
       return respond({answer,provider:'Montra verified calculation'});
     }
-    const messages=[{role:'system',content:'You are Montra, a bilingual Arabic/English financial education assistant. Answer in the user language. Today (UTC) is '+currentDate+'. Never infer the current month from transaction dates. The following financial facts were computed deterministically by the app; use them exactly, never recalculate or invent numbers: '+JSON.stringify(facts)+'. Data is user-recorded, not bank-verified, and may be incomplete. CRITICAL: when recorded_monthly_income is null, it means no positive income amount is recorded; NEVER claim actual income is zero, that the user lives off savings, is unemployed, or has no income. State that income is not available and ask the user to enter it in Accounts. Do not infer real financial circumstances from missing data. Offer actionable advice grounded in available categories and goals, clearly label uncertainty. Use plain text without Markdown symbols such as ** or #. If records are missing, say so. Do not provide definitive buy/sell instructions. Be concise.'},{role:'user',content:question}];
+    const messages=[{role:'system',content:'You are Montra, a bilingual Arabic/English financial education assistant. Answer in the user language. Today (UTC) is '+currentDate+'. Never infer the current month from transaction dates. The user may provide temporary financial figures in chat. chat_declared_income is a hypothetical user-stated value, NOT saved or verified; distinguish it from recorded_monthly_income. Use previous conversation turns for follow-ups. Give a provisional plan when possible instead of refusing. The following financial facts were computed deterministically by the app; use them exactly, never recalculate or invent numbers: '+JSON.stringify(facts)+'. Data is user-recorded, not bank-verified, and may be incomplete. CRITICAL: when recorded_monthly_income is null, it means no positive income amount is recorded; NEVER claim actual income is zero, that the user lives off savings, is unemployed, or has no income. State that income is not available and ask the user to enter it in Accounts. Do not infer real financial circumstances from missing data. Offer actionable advice grounded in available categories and goals, clearly label uncertainty. Use plain text without Markdown symbols such as ** or #. If records are missing, say so. Do not provide definitive buy/sell instructions. Be concise.'},...history.map(m=>({role:m.role,content:m.text})),{role:'user',content:question}];
     const result=await env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8-fast',{messages,max_tokens:350});
     const answer=String(result?.response||'').trim();if(!answer)throw Error('Empty AI response');
     return respond({answer,provider:'Cloudflare Workers AI'});
