@@ -3,3 +3,8 @@
 # Build command: (leave blank), Build output directory: /
 name = "montra"
 pages_build_output_dir = "."
+
+compatibility_date = "2026-11-09"
+
+[ai]
+binding = "AI"
