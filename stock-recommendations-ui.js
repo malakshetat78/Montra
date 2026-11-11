@@ -50,10 +50,25 @@ window.montraRefreshStockWatch=async()=>{
 window.montraDemoBuy=symbol=>{
  const item=(opportunityItems||[]).find(a=>a.symbol===symbol);
  if(!item||!signal(item).ready){alert('A recent usable quote is required. Reload market data.');return;}
- sandboxForm();
- const symbolInput=document.getElementById('sandbox-symbol');
- if(symbolInput)symbolInput.value=symbol;
- const amount=document.getElementById('sandbox-amount');if(amount)amount.focus();
+ showForm('<form id="stock-paypal-form"><h2>PayPal Sandbox · Demo purchase</h2><p>Test payment for '+esc(symbol)+' using PayPal Sandbox. No real money or real shares.</p><label>US stock</label><input value="'+esc(symbol)+'" readonly><label for="stock-paypal-amount">Test amount (USD)</label><input id="stock-paypal-amount" name="amount" type="number" min="1" max="10000" step="0.01" required placeholder="e.g. 10.00"><label style="display:flex;gap:8px;align-items:start;margin:12px 0"><input id="stock-paypal-consent" type="checkbox" required style="width:auto;margin-top:4px">I understand this uses PayPal Sandbox test funds, not real money or securities.</label><p class="sandbox-notice">The amount and quantity will be calculated from a refreshed quote. PayPal Sandbox approval opens after you confirm.</p><p id="stock-paypal-status" role="status"></p><div class="actions"><button class="secondary" type="button" onclick="closeForm()">Cancel</button><button class="primary" type="submit">Continue to PayPal Sandbox</button></div></form>');
+ const form=document.getElementById('stock-paypal-form');
+ form.onsubmit=async e=>{
+   e.preventDefault();if(!form.reportValidity())return;
+   const button=form.querySelector('button[type="submit"]'),status=document.getElementById('stock-paypal-status');
+   button.disabled=true;status.textContent='Fetching fresh quote and creating PayPal Sandbox checkout…';
+   try{
+     const amount=Number(document.getElementById('stock-paypal-amount').value);
+     if(!Number.isFinite(amount)||amount<1||amount>10000)throw Error('Enter a test amount between USD 1 and 10,000.');
+     const preview=await sandboxCall('preview',{symbol,amount_usd:amount});
+     if(!preview.draft?.id)throw Error('Could not create a demo review.');
+     sandboxOrders=[preview.draft,...sandboxOrders].slice(0,30);
+     const payment=await sandboxCall('create',{draft_id:preview.draft.id});
+     const url=new URL(payment.approval_url);
+     if(url.origin!=='https://www.sandbox.paypal.com')throw Error('Unexpected PayPal destination.');
+     location.assign(url.href);
+   }catch(error){status.textContent=error.message||'Sandbox checkout is unavailable.';button.disabled=false;}
+ };
+ document.getElementById('stock-paypal-amount')?.focus();
 };
 window.montraStockExplain=symbol=>{
  const item=(opportunityItems||[]).find(a=>a.symbol===symbol);
