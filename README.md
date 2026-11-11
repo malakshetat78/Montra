@@ -2,7 +2,16 @@
 
 Personal finance app with cash/manual PayPal expenses, category budgets, income and commitments, savings forecasts, gold/investment tracking, and notifications.
 
-Live app: https://montra-finance.khaledshetat4.chatgpt.site
+**Live app:** https://montra-61q.pages.dev/
+
+## Recent features (Demo)
+
+- **AI Chat:** Cloudflare Workers AI financial assistant with expense summaries and illustrative savings plans. Chat-declared income is not saved automatically; financial data supplied by the browser is not independently re-fetched by the AI endpoint.
+- **Stock Recommendations:** US market research watchlist with Twelve Data quotes when available, quote timestamps, volatility/risk context and a link to AI Chat. These are research signals, not guaranteed buy opportunities.
+- **Stock watch notifications:** attempts to save deduplicated watch alerts in the existing notification bell after sign-in, approximately every 15 minutes while Montra is open, and when returning to the tab. This is **not** an always-on background market monitor or closed-browser push alert.
+- **Demo trading:** initiate a simulated fractional-share purchase from Stock Recommendations and proceed to PayPal **Sandbox** checkout. Sandbox payments do not move real money or purchase real securities; payment approval/capture can fail and must not be represented as a successful trade without verification.
+- **Demo Portfolio Performance:** estimated unrealized profit/loss for completed simulated positions, using available recent quotes. Stale or missing quotes are excluded, and the calculation excludes fees, spreads and dividends.
+- **Limitations:** stock research does not provide personalized investment advice; real brokerage execution, Egyptian exchange coverage and production real-money stock trading are **not connected**. Live end-to-end verification of the newest flows is still required.
 
 ## Run locally
 
