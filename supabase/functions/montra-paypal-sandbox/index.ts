@@ -42,6 +42,14 @@ if(body.action==='create'){
  if(draft.paypal_order_id)return reply({approval_url:draft.approval_url,draft});if(Date.now()-Date.parse(draft.created_at)>15*60000)throw new Error('This review has expired. Request a new preview.');
  const order=await json(BASE+'/v2/checkout/orders',{method:'POST',headers:{...payHeaders,'PayPal-Request-Id':draft.id},body:JSON.stringify({intent:'CAPTURE',purchase_units:[{custom_id:draft.id,description:'Montra Sandbox demo funding - no real securities',amount:{currency_code:'USD',value:usdAmount(draft.amount_usd)}}],payment_source:{paypal:{experience_context:{brand_name:'Montra Sandbox',user_action:'PAY_NOW',return_url:SITE+'/?view=investments&paypal_demo='+draft.id,cancel_url:SITE+'/?view=investments&paypal_cancel='+draft.id}}}})});const url=approvalURL(order);const {error:saveError}=await admin.from('montra_sandbox_orders').update({paypal_order_id:order.id,approval_url:url,status:'awaiting_approval'}).eq('id',draft.id).eq('user_id',uid);if(saveError)throw new Error('Could not save PayPal order. Retry this same review.');return reply({approval_url:url});
 }
+if(body.action==='demo_complete'){
+ if(!draft.paypal_order_id)return reply({error:'Sandbox order not created'},400);
+ if(draft.status==='simulated_filled')return reply({draft});
+ if(draft.status==='demo_completed')return reply({draft});
+ const {data:updated,error:demoError}=await admin.from('montra_sandbox_orders').update({status:'demo_completed',completed_at:new Date().toISOString()}).eq('id',draft.id).eq('user_id',uid).eq('status','awaiting_approval').select('*').single();
+ if(demoError||!updated)return reply({error:'Could not record demo completion'},400);
+ return reply({draft:updated,payment_verified:false});
+}
 if(body.action==='capture'){
  if(!draft.paypal_order_id)throw new Error('No PayPal order exists');let order=await json(BASE+'/v2/checkout/orders/'+encodeURIComponent(draft.paypal_order_id),{headers:payHeaders});if(order.status==='APPROVED')order=await json(BASE+'/v2/checkout/orders/'+encodeURIComponent(draft.paypal_order_id)+'/capture',{method:'POST',headers:{...payHeaders,'PayPal-Request-Id':'cap-'+draft.id},body:'{}'});const capture=verifiedCapture(order,draft);const {error:completeError}=await admin.rpc('montra_complete_sandbox_order',{draft_id:draft.id,owner_id:uid,provider_order:draft.paypal_order_id,provider_capture:capture});if(completeError)throw new Error('Payment verified; could not save simulation. Retry to recover without paying again.');return reply({draft:{...draft,status:'simulated_filled',capture_id:capture}});
 }
