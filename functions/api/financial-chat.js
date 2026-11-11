@@ -28,20 +28,23 @@ export async function onRequestPost({request,env}){
     const currency=String(snapshot.currency||'EGP').slice(0,5);
     const facts={today_utc:currentDate,current_month:currentMonth,monthly_expense_total:currentTotal,monthly_expense_count:monthlyExpenses.length,monthly_category_totals:byCategory,recorded_monthly_income:(Number(snapshot.income)>0?Number(snapshot.income):null),income_status:(Number(snapshot.income)>0?'recorded_positive':'not_recorded_or_zero'),expenses_completeness:'Only user-recorded expenses; may be incomplete',goals:safeGoals,currency};
     const history=Array.isArray(body?.history)?body.history.slice(-8).filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.text==='string').map(m=>({role:m.role,text:m.text.slice(0,500)})):[];
-    const incomePattern=/(?:my\\s+(?:monthly\\s+)?income\\s+is|i\\s+earn|دخلي(?:\\s+الشهري)?|مرتبي)\\s*(?:is|=|هو|حوالي)?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)/i;
+    const incomePattern=/(?:my\s+(?:monthly\s+)?income\s+is|i\s+earn|دخلي(?:\s+الشهري)?|مرتبي)\s*(?:is|=|هو|حوالي)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)/i;
     const incomeFrom=text=>{const m=String(text).match(incomePattern);if(!m)return null;const n=Number(m[1].replace(/,/g,''));return Number.isFinite(n)&&n>0&&n<1e9?n:null;};
     const declaredIncome=incomeFrom(question)??history.filter(m=>m.role==='user').reverse().map(m=>incomeFrom(m.text)).find(n=>n!==null)??null;
     facts.chat_declared_income=declaredIncome;
     facts.chat_declared_income_is_saved=false;
     const savingsQuestion=/(sav(?:e|ing|ings)|budget|plan|ادخار|تحويش|وفر|توفير|ميزاني|خطة)/i.test(question);
+    const requestedSaving=question.match(/(?:sav(?:e|ing)\s+|ادخر\s*|أوفر\s*|احوش\s*)([0-9][0-9,]*(?:\.[0-9]+)?)/i);
     if(savingsQuestion&&declaredIncome!==null){
       const available=Math.round((declaredIncome-currentTotal)*100)/100;
-      const proposed=Math.max(0,Math.min(500,Math.round(Math.max(0,available)*0.15*100)/100));
+      const suggested=Math.max(0,Math.min(500,Math.round(Math.max(0,available)*0.15*100)/100));
+      const desired=requestedSaving?Number(requestedSaving[1].replace(/,/g,'')):null;
+      const proposed=desired!==null&&Number.isFinite(desired)&&desired>=0?desired:suggested;
       const remaining=Math.round((available-proposed)*100)/100;
       const money=n=>currency+' '+n.toLocaleString('en-US',{maximumFractionDigits:2});
       const goalsText=safeGoals.length?safeGoals.map(g=>g.name+' ('+money(Math.max(0,g.target-g.saved))+' remaining)').join('; '):'No goals saved';
-      const arabic=/[\\u0600-\\u06FF]/.test(question);
-      const answer=arabic?'خطة ادخار تجريبية بناءً على الدخل اللي قلته في الشات '+money(declaredIncome)+' (مش محفوظ في حسابك): المصروفات المسجلة للشهر '+money(currentTotal)+'، والفرق المبدئي '+money(available)+'، واقتراح ادخار محافظ '+money(proposed)+'، والمتبقي نظريًا '+money(remaining)+'. الأهداف: '+goalsText+'. مهم: مصروفاتك المسجلة ممكن تكون ناقصة؛ راجع الأساسيات والالتزامات قبل الالتزام بالمبلغ.':'Illustrative savings plan using the '+money(declaredIncome)+' monthly income you mentioned in chat (not saved to your account): recorded expenses this month '+money(currentTotal)+'; preliminary difference '+money(available)+'; cautious suggested savings '+money(proposed)+'; theoretical remainder '+money(remaining)+'. Goals: '+goalsText+'. Your expense records may be incomplete. Check essentials, bills and debts before committing to this amount.';
+      const arabic=/[\u0600-\u06FF]/.test(question);
+      const answer=arabic?'خطة ادخار تقديرية بدخل '+money(declaredIncome)+' اللي ذكرته في الشات فقط (مش محفوظ): المصروفات المسجلة '+money(currentTotal)+'، والفرق المبدئي '+money(available)+'، الادخار '+money(proposed)+'، والمتبقي نظريًا '+money(remaining)+'. الأهداف: '+goalsText+'. راجع مصاريفك والتزاماتك غير المسجلة قبل اعتماد الخطة.':'Illustrative plan using '+money(declaredIncome)+' income mentioned in chat only (not saved): recorded monthly expenses '+money(currentTotal)+'; preliminary difference '+money(available)+'; '+(desired!==null?'your proposed':'suggested')+' savings '+money(proposed)+'; theoretical remainder '+money(remaining)+'. Goals: '+goalsText+'. Unrecorded expenses and obligations may reduce this amount. No account data was changed.';
       return respond({answer,provider:'Montra illustrative calculation'});
     }
     const isArabic=/[\u0600-\u06FF]/.test(question);
