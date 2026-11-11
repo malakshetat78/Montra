@@ -33,12 +33,9 @@ async function publishStockAlerts(items){
  let sent=0,failed=0;
  for(const a of candidates){
    const day=String(a.quote_time||'').slice(0,10),title='Stock watch: '+String(a.symbol).slice(0,20);
+   const event_key='stock-watch:'+String(a.symbol).slice(0,20)+':'+day;
    const body='Potential research opportunity · '+fmtUSD(a.price)+' · quote '+String(a.quote_time||'unknown')+'. Not a buy instruction.';
-   // Check persisted records to avoid duplicate notifications across sessions/devices.
-   const existing=await db.from('montra_notifications').select('id').eq('user_id',user.id).eq('title',title).gte('created_at',day+'T00:00:00Z').limit(1);
-   if(existing.error){failed++;continue;}
-   if(existing.data?.length)continue;
-   const saved=await db.from('montra_notifications').insert({user_id:user.id,title,body,destination:'stock-recommendations'});
+   const saved=await db.from('montra_notifications').upsert({user_id:user.id,event_key,title,body,kind:'stock',destination:'stock-recommendations'},{onConflict:'user_id,event_key',ignoreDuplicates:true});
    if(saved.error)failed++;else sent++;
  }
  if(sent)await refreshNotifications();
