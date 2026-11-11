@@ -1,6 +1,6 @@
 /* Stock Recommendations: research watchlist, not automated financial advice. */
 (()=>{
-let loading=false,error='',loaded=false;
+let loading=false,error='',loaded=false,alerts=[];
 const nav=document.querySelector('.sidebar nav');
 if(nav&&!nav.querySelector('[data-page="stock-recommendations"]')){
  const b=document.createElement('button');b.className='nav';b.dataset.page='stock-recommendations';b.innerHTML='<span class="icon">⌁</span> Stock Recommendations';b.onclick=()=>navigate('stock-recommendations');nav.appendChild(b);
@@ -18,19 +18,27 @@ function signal(a){
 function pageHTML(){
  const items=Array.isArray(opportunityItems)?opportunityItems:[];
  return '<div style="display:grid;gap:16px">'+
- '<div class="card panel"><div class="cardhead"><div><h2>Stock Recommendations</h2><p>Research watchlist with market quotes, reasons and risks. No automatic purchases.</p></div><span class="pill">Research only</span></div>'+
+ '<div class="card panel"><div class="cardhead"><div><h2>Stock Recommendations</h2><p>Research watchlist with market quotes, reasons and risks. Simulated purchases only · real market data.</p></div><span class="pill">Research only</span></div>'+
  '<p class="plan-note">These are provider-supplied US market examples, not personalized buy orders or a ranked list. Price movements alone cannot establish a good entry price. Quotes can be delayed. Egyptian market coverage is not connected.</p>'+
  '<button class="primary" type="button" onclick="montraRefreshStockWatch()" '+(loading?'disabled':'')+'>'+(loading?'Checking quotes…':'Analyze available US stocks')+'</button>'+
  (error?'<p role="alert" class="warning">'+esc(error)+'</p>':'')+
- (!loaded?'<p class="muted">Press Analyze to load current available examples.</p>':'')+
+ (!loaded?'<p class="muted">Press Analyze to load current available examples.</p>':'')+(alerts.length?'<div style="margin-top:14px"><b>🔔 Opportunity watch alerts (this session)</b>'+alerts.map(a=>'<p class="sandbox-notice">'+esc(a)+'</p>').join('')+'</div>':'')+
  '</div>'+
- (loaded&&!loading?(!items.length?'<div class="card panel"><p>No market data available. Try again later.</p></div>':items.map(a=>{const x=signal(a);return '<article class="card panel" style="display:grid;gap:9px"><div class="cardhead"><div><h3>'+esc(a.name||a.symbol)+' <small>'+esc(a.symbol)+'</small></h3><p>'+esc(a.type||'Market instrument')+'</p></div><span class="pill">'+esc(x.label)+'</span></div><h3>'+(x.ready?fmtUSD(a.price):'Price unavailable')+'</h3><p><b>Why:</b> '+esc(x.why)+'</p><p><b>Risk:</b> '+esc(x.risk)+'</p><p><b>Source:</b> Twelve Data · '+esc(String(a.quote_time||'Timestamp unavailable'))+(a.closed?' · Market closed':'')+'</p><button type="button" class="inlinebtn" onclick="montraStockExplain('+JSON.stringify(String(a.symbol)).replace(/"/g,'&quot;')+')">Ask Montra AI about this stock</button></article>'}).join('')):'')+
+ (loaded&&!loading?(!items.length?'<div class="card panel"><p>No market data available. Try again later.</p></div>':items.map(a=>{const x=signal(a);return '<article class="card panel" style="display:grid;gap:9px"><div class="cardhead"><div><h3>'+esc(a.name||a.symbol)+' <small>'+esc(a.symbol)+'</small></h3><p>'+esc(a.type||'Market instrument')+'</p></div><span class="pill">'+esc(x.label)+'</span></div><h3>'+(x.ready?fmtUSD(a.price):'Price unavailable')+'</h3><p><b>Why:</b> '+esc(x.why)+'</p><p><b>Risk:</b> '+esc(x.risk)+'</p><p><b>Source:</b> Twelve Data · '+esc(String(a.quote_time||'Timestamp unavailable'))+(a.closed?' · Market closed':'')+'</p><button type="button" class="inlinebtn" onclick="montraStockExplain('+JSON.stringify(String(a.symbol)).replace(/"/g,'&quot;')+')">Ask Montra AI about this stock</button> <button type="button" class="primary" '+(x.ready?'':'disabled')+' onclick="montraDemoBuy('+JSON.stringify(String(a.symbol)).replace(/"/g,'&quot;')+')">Buy · Demo only</button></article>'}).join('')):'')+
  '<div class="card panel"><p class="muted">Educational research, not a recommendation to buy, sell or hold. Review your risk tolerance, emergency savings, investment horizon and independent sources before deciding.</p></div></div>';
 }
 window.montraRefreshStockWatch=async()=>{
  if(loading)return;loading=true;error='';render();
- try{const data=await sandboxCall('explore');opportunityItems=Array.isArray(data.items)?data.items:[];loaded=true;}catch(e){error=e.message||'Market data could not be loaded';loaded=false;}
+ try{const data=await sandboxCall('explore');opportunityItems=Array.isArray(data.items)?data.items:[];loaded=true;alerts=opportunityItems.filter(a=>signal(a).ready&&signal(a).label==='Worth researching').slice(0,4).map(a=>a.symbol+' · Worth researching at '+fmtUSD(a.price)+' · '+a.quote_time+' (not a buy instruction)');}catch(e){error=e.message||'Market data could not be loaded';loaded=false;}
  finally{loading=false;if(page==='stock-recommendations')render();}
+};
+window.montraDemoBuy=symbol=>{
+ const item=(opportunityItems||[]).find(a=>a.symbol===symbol);
+ if(!item||!signal(item).ready){alert('A recent usable quote is required. Reload market data.');return;}
+ sandboxForm();
+ const symbolInput=document.getElementById('sandbox-symbol');
+ if(symbolInput)symbolInput.value=symbol;
+ const amount=document.getElementById('sandbox-amount');if(amount)amount.focus();
 };
 window.montraStockExplain=symbol=>{
  const item=(opportunityItems||[]).find(a=>a.symbol===symbol);
