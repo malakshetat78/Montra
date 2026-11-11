@@ -1,6 +1,6 @@
 /* Stock Recommendations: research watchlist, not automated financial advice. */
 (()=>{
-let loading=false,error='',loaded=false,alertStatus='';
+let loading=false,error='',loaded=false,alertStatus='',lastAutoCheck=0,autoUser=null;
 const nav=document.querySelector('.sidebar nav');
 if(nav&&!nav.querySelector('[data-page="stock-recommendations"]')){
  const b=document.createElement('button');b.className='nav';b.dataset.page='stock-recommendations';b.innerHTML='<span class="icon">⌁</span> Stock Recommendations';b.onclick=()=>navigate('stock-recommendations');nav.appendChild(b);
@@ -42,6 +42,22 @@ async function publishStockAlerts(items){
  alertStatus=sent?sent+' stock watch alert(s) added to the notification bell.':failed?'Could not save stock alerts to the notification bell.':'Stock watch alerts already saved today.';
  if(failed)alertStatus+=' '+failed+' alert(s) could not be saved.';
 }
+async function automaticStockCheck(){
+ if(!user||loading||document.hidden||Date.now()-lastAutoCheck<15*60*1000)return;
+ lastAutoCheck=Date.now();
+ try{
+   const data=await sandboxCall('explore');
+   if(!user)return;
+   opportunityItems=Array.isArray(data.items)?data.items:[];
+   loaded=true;
+   await publishStockAlerts(opportunityItems);
+   if(page==='stock-recommendations')render();
+ }catch(e){console.warn('Stock watch background refresh unavailable:',e.message);}
+}
+setInterval(()=>{if(user)automaticStockCheck();},15*60*1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&user)automaticStockCheck();});
+const stockLoadData=loadData;
+loadData=async function(){await stockLoadData();if(user){if(autoUser!==user.id){autoUser=user.id;lastAutoCheck=0;}automaticStockCheck();}};
 window.montraRefreshStockWatch=async()=>{
  if(loading)return;loading=true;error='';alertStatus='';render();
  try{const data=await sandboxCall('explore');opportunityItems=Array.isArray(data.items)?data.items:[];loaded=true;await publishStockAlerts(opportunityItems);}catch(e){error=e.message||'Market data could not be loaded';loaded=false;}
